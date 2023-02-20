@@ -16,7 +16,7 @@ public enum MemoryRepositoryError: String, Error {
 }
 
 /// Memory 관련 Firebase Firestore 연동
-public struct MemoryRepository: AbstractRepository {
+public struct MemoryRepository: AbstractMemoryRepository {
     private var database: Firestore
 
     public init() {

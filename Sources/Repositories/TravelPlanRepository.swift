@@ -18,7 +18,7 @@ public enum TravelPlanRepositoryError: String, Error {
     case swapError = "계획 순서 변경을 실패했습니다."
 }
 
-public struct TravelPlanRepository: AbstractRepository {
+public struct TravelPlanRepository: AbstractTravelPlanRepository {
     private var database: Firestore
     
     public init() {
