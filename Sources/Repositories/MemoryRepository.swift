@@ -19,8 +19,8 @@ public enum MemoryRepositoryError: String, Error {
 public struct MemoryRepository: AbstractRepository {
     private var database: Firestore
 
-    public init(_ database: Firestore) {
-        self.database = database
+    public init() {
+        self.database = Firestore.firestore()
     }
     
     // write

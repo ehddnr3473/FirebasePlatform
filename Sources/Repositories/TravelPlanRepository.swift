@@ -8,6 +8,7 @@
 import Foundation
 import Domain
 import CoreLocation
+import FirebaseCore
 import FirebaseFirestore
 
 public enum TravelPlanRepositoryError: String, Error {
@@ -20,8 +21,8 @@ public enum TravelPlanRepositoryError: String, Error {
 public struct TravelPlanRepository: AbstractRepository {
     private var database: Firestore
     
-    public init(_ database: Firestore) {
-        self.database = database
+    public init() {
+        self.database = Firestore.firestore()
     }
     
     // create & update
