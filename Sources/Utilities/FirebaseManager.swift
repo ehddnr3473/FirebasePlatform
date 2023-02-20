@@ -8,10 +8,8 @@
 import Foundation
 import FirebaseCore
 
-public final class FirebaseManager {
+public struct FirebaseManager {
     public static func configure() {
-        DispatchQueue.main.async {
-            FirebaseApp.configure()
-        }
+        FirebaseApp.configure()
     }
 }
