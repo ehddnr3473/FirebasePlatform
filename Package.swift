@@ -5,6 +5,9 @@ import PackageDescription
 
 let package = Package(
     name: "FirebasePlatform",
+    platforms: [
+        .iOS(.v13)
+    ],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
         .library(
@@ -12,6 +15,14 @@ let package = Package(
             targets: ["FirebasePlatform"]),
     ],
     dependencies: [
+        .package(
+            url: "https://github.com/firebase/firebase-ios-sdk.git",
+            .upToNextMajor(from: "9.0.0")
+        ),
+        .package(
+            url: "https://github.com/ehddnr3473/Domain.git",
+            .upToNextMajor(from: "0.0.4")
+        )
         // Dependencies declare other packages that this package depends on.
         // .package(url: /* package url */, from: "1.0.0"),
     ],
@@ -20,9 +31,21 @@ let package = Package(
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
             name: "FirebasePlatform",
-            dependencies: []),
-        .testTarget(
-            name: "FirebasePlatformTests",
-            dependencies: ["FirebasePlatform"]),
+            dependencies: [
+                .product(
+                    name: "FirebaseFirestore",
+                    package: "firebase-ios-sdk"
+                ),
+                .product(
+                    name: "FirebaseStorage",
+                    package: "firebase-ios-sdk"
+                ),
+                .product(
+                    name: "Domain",
+                    package: "Domain"
+                )
+            ],
+            path: "./Sources"
+        )
     ]
 )
