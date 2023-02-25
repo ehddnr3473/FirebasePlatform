@@ -21,7 +21,7 @@ let package = Package(
         ),
         .package(
             url: "https://github.com/ehddnr3473/Domain.git",
-            .upToNextMajor(from: "0.0.6")
+            .upToNextMajor(from: "0.0.7")
         )
         // Dependencies declare other packages that this package depends on.
         // .package(url: /* package url */, from: "1.0.0"),
