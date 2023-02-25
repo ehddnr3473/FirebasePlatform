@@ -1,5 +1,5 @@
 //
-//  TravelPlanRepository.swift
+//  DefaultPlansRepository.swift
 //  FirebasePlatform
 //
 //  Created by 김동욱 on 2023/02/18.
@@ -11,94 +11,96 @@ import CoreLocation
 import FirebaseCore
 import FirebaseFirestore
 
-public enum TravelPlanRepositoryError: String, Error {
+public enum PlansRepositoryError: String, Error {
     case uploadError = "계획 업로드를 실패했습니다."
     case readError = "계획 다운로드를 실패했습니다."
     case deleteError = "계획 삭제를 실패했습니다."
     case swapError = "계획 순서 변경을 실패했습니다."
 }
 
-public struct TravelPlanRepository: AbstractTravelPlanRepository {
+/// Firebase Firestore 서비스
+public struct DefaultPlansRepository: PlansRepository {
+    // MARK: - Private
     private var database: Firestore
     
+    // MARK: - Init
     public init() {
         self.database = Firestore.firestore()
     }
     
-    // create & update
-    public func upload(at index: Int, entity: TravelPlan) async throws {
-        let object = entity.toData()
+    // MARK: - Repository logic
+    public func upload(at index: Int, plan: Plan) async throws {
         do {
             try await database.collection(DatabasePath.plans).document("\(index)").setData([
-                Key.title: object.title,
-                Key.description: object.description
+                Key.title: plan.title,
+                Key.description: plan.description
             ])
             
-            for scheduleIndex in object.schedules.indices {
+            for scheduleIndex in plan.schedules.indices {
                 let coordinate = GeoPoint(
-                    latitude: object.schedules[scheduleIndex].coordinate.latitude,
-                    longitude: object.schedules[scheduleIndex].coordinate.longitude
+                    latitude: plan.schedules[scheduleIndex].coordinate.latitude,
+                    longitude: plan.schedules[scheduleIndex].coordinate.longitude
                 )
                 try await database.collection(DatabasePath.plans)
                     .document("\(index)").collection(DocumentConstants.schedulesCollection).document("\(scheduleIndex)")
                     .setData([
                         // Key-Value Pair
                         Key.title:
-                            object.schedules[scheduleIndex].title,
+                            plan.schedules[scheduleIndex].title,
                         Key.description:
-                            object.schedules[scheduleIndex].description,
+                            plan.schedules[scheduleIndex].description,
                         Key.fromDate:
-                            DateConverter.dateToString(object.schedules[scheduleIndex].fromDate),
+                            DateConverter.dateToString(plan.schedules[scheduleIndex].fromDate),
                         Key.toDate:
-                            DateConverter.dateToString(object.schedules[scheduleIndex].toDate),
+                            DateConverter.dateToString(plan.schedules[scheduleIndex].toDate),
                         Key.coordinate:
                             coordinate
                     ])
             }
         } catch {
-            throw TravelPlanRepositoryError.uploadError
+            throw PlansRepositoryError.uploadError
         }
     }
     
-    // read
-    // Firebase에서 다운로드한 데이터로 TravelPlanDTO를 생성해서 반환
-    public func read() async throws -> [TravelPlan] {
-        var travelPlans = [FBTravelPlan]()
+    public func read() async throws -> [Plan] {
+        var plans = [Plan]()
         
         do {
-            let travelPlansSnapshot = try await database.collection(DatabasePath.plans).getDocuments()
+            let plansSnapshot = try await database.collection(DatabasePath.plans).getDocuments()
             var documentIndex = NumberConstants.zero
             
-            for document in travelPlansSnapshot.documents {
+            for document in plansSnapshot.documents {
                 let data = document.data()
                 let scheduleSnapshot = try await database.collection(DatabasePath.plans)
                     .document("\(documentIndex)").collection(DocumentConstants.schedulesCollection).getDocuments()
-                var schedules = [FBSchedule]()
+                var schedules = [Schedule]()
                 
                 for documentation in scheduleSnapshot.documents {
-                    schedules.append(self.createSchedule(documentation.data()))
+                    schedules.append(createSchedule(documentation.data()))
                 }
-                travelPlans.append(self.createTravelPlan(data, schedules))
+                plans.append(createPlan(data, schedules))
                 documentIndex += NumberConstants.one
             }
-            return travelPlans.map { $0.toDomain() }
+            return plans
         } catch {
-            throw TravelPlanRepositoryError.readError
+            throw PlansRepositoryError.readError
         }
     }
     
-    // delete
     public func delete(at index: Int) async throws {
         do {
             try await database.collection(DatabasePath.plans).document("\(index)").delete()
         } catch {
-            throw TravelPlanRepositoryError.deleteError
+            throw PlansRepositoryError.deleteError
         }
     }
-    
-    // Firebase에서 다운로드한 데이터로 TravelPlan을 생성해서 반환
-    private func createTravelPlan(_ data: Dictionary<String, Any>, _ schedules: [FBSchedule]) -> FBTravelPlan {
-        FBTravelPlan(
+}
+
+// MARK: - Private
+private extension DefaultPlansRepository {
+    // Firebase에서 다운로드한 데이터로 Plan을 생성해서 반환
+    func createPlan(_ data: Dictionary<String, Any>, _ schedules: [Schedule]) -> Plan {
+        Plan(
             title: data[Key.title] as! String,
             description: data[Key.description] as! String,
             schedules: schedules
@@ -106,11 +108,11 @@ public struct TravelPlanRepository: AbstractTravelPlanRepository {
     }
     
     // Firebase에서 다운로드한 데이터로 Schedule을 생성해서 반환
-    private func createSchedule(_ data: Dictionary<String, Any>) -> FBSchedule {
+    func createSchedule(_ data: Dictionary<String, Any>) -> Schedule {
         guard let coordinate = data[Key.coordinate] as? GeoPoint else { fatalError() }
         if let fromDate = data[Key.fromDate] as? String,
            let toDate = data[Key.toDate] as? String {
-            return FBSchedule(
+            return Schedule(
                 title: data[Key.title] as! String,
                 description: data[Key.description] as! String,
                 coordinate: CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude),
@@ -118,7 +120,7 @@ public struct TravelPlanRepository: AbstractTravelPlanRepository {
                 toDate: DateConverter.stringToDate(toDate)
             )
         } else {
-            return FBSchedule(
+            return Schedule(
                 title: data[Key.title] as! String,
                 description: data[Key.description] as! String,
                 coordinate: CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude),
@@ -129,18 +131,22 @@ public struct TravelPlanRepository: AbstractTravelPlanRepository {
     }
 }
 
-private enum NumberConstants {
-    static let zero = 0
-    static let one = 1
-}
-private enum DocumentConstants {
-    static let schedulesCollection = "schedules"
-}
+// MARK: - Magic number/string
+private extension DefaultPlansRepository {
+    @frozen enum NumberConstants {
+        static let zero = 0
+        static let one = 1
+    }
+    @frozen enum DocumentConstants {
+        static let schedulesCollection = "schedules"
+    }
 
-private enum Key {
-    static let title = "title"
-    static let description = "description"
-    static let fromDate = "fromDate"
-    static let toDate = "toDate"
-    static let coordinate = "coordinate"
+    @frozen enum Key {
+        static let title = "title"
+        static let description = "description"
+        static let fromDate = "fromDate"
+        static let toDate = "toDate"
+        static let coordinate = "coordinate"
+    }
+
 }
