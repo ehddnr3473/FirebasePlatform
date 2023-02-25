@@ -8,14 +8,17 @@
 import Foundation
 
 public enum DateConverter {
-    static let nilDateText = "날짜 미지정"
+    @frozen public enum Constants {
+        public static let nilDateText = "날짜 미지정"
+    }
+    
     private static let dateFormatter: DateFormatter = {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yy.MM.dd"
         return dateFormatter
     }()
     
-    static func dateToString(_ date: Date?) -> String {
+    public static func dateToString(_ date: Date?) -> String {
         if let date = date {
             return dateFormatter.string(from: date)
         } else {
@@ -23,7 +26,7 @@ public enum DateConverter {
         }
     }
     
-    static func stringToDate(_ string: String) -> Date? {
+    public static func stringToDate(_ string: String) -> Date? {
         dateFormatter.date(from: string)
     }
 }
