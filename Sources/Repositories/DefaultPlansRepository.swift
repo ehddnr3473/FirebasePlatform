@@ -87,9 +87,10 @@ public struct DefaultPlansRepository: PlansRepository {
         }
     }
     
-    public func delete(at index: Int) async throws {
+    public func delete(at index: Int, plans: [Plan]) async throws {
         do {
             try await database.collection(DatabasePath.plans).document("\(index)").delete()
+            try await deleteCompletion(at: index, plans: plans)
         } catch {
             throw PlansRepositoryError.deleteError
         }
@@ -128,6 +129,16 @@ private extension DefaultPlansRepository {
                 toDate: nil
             )
         }
+    }
+    
+    func deleteCompletion(at deletedIndex: Int, plans: [Plan]) async throws {
+        guard deletedIndex < plans.count - 1 else { return }
+        
+        for index in deletedIndex..<plans.count - 1 {
+            try await upload(at: index, plan: plans[index + 1])
+        }
+        
+        try await database.collection(DatabasePath.plans).document("\(plans.count - 1)").delete()
     }
 }
 
