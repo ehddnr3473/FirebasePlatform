@@ -19,18 +19,18 @@ public enum MemoriesRepositoryError: String, Error {
 public struct DefaultMemoriesRepository: MemoriesRepository {
     // MARK: - Private
     private var database: Firestore
-
+    
     // MARK: - Init
     public init() {
         self.database = Firestore.firestore()
     }
     
     // MARK: - Repository logic
-    public func upload(at index: Int, memory: Memory) async throws {
+    public func upload(_ memory: Memory) async throws {
         do {
-            try await database.collection(DatabasePath.memories).document("\(DocumentPrefix.memory)\(memory.index)").setData([
+            try await database.collection(DatabasePath.memories).document("\(DocumentPrefix.memory)\(memory.id)").setData([
+                Key.id: memory.id,
                 Key.title: memory.title,
-                Key.index: memory.index,
                 Key.uploadDate: DateConverter.dateToString(memory.uploadDate)
             ])
         } catch {
@@ -67,21 +67,21 @@ public struct DefaultMemoriesRepository: MemoriesRepository {
 private extension DefaultMemoriesRepository {
     // 다운로드한 데이터로 Memory를 생성하여 반환
     func createMemory(_ data: Dictionary<String, Any>) -> Memory {
-        let memories = Memory(title: data[Key.title] as! String,
-                              index: data[Key.index] as! Int,
-                              uploadDate: DateConverter.stringToDate(data[Key.uploadDate] as! String)!)
-        return memories
+        let memory = Memory(id: data[Key.id] as! Int,
+                            title: data[Key.title] as! String,
+                            uploadDate: DateConverter.stringToDate(data[Key.uploadDate] as! String)!)
+        return memory
     }
 }
 
 // MARK: - Magic string
 private extension DefaultMemoriesRepository {
     @frozen enum Key {
+        static let id = "id"
         static let title = "title"
-        static let index = "index"
-        static let uploadDate = "date"
+        static let uploadDate = "uploadDate"
     }
-
+    
     @frozen enum DocumentPrefix {
         static let memory = "memory"
     }
