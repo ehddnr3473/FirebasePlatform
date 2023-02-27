@@ -151,7 +151,7 @@ private extension DefaultPlansRepository {
     @frozen enum DocumentConstants {
         static let schedulesCollection = "schedules"
     }
-
+    
     @frozen enum Key {
         static let title = "title"
         static let description = "description"
@@ -159,5 +159,4 @@ private extension DefaultPlansRepository {
         static let toDate = "toDate"
         static let coordinate = "coordinate"
     }
-
 }
