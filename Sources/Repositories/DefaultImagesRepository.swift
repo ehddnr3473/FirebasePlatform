@@ -17,7 +17,7 @@ public enum ImagesRepositoryError: String, Error {
 }
 
 // MARK: - Private. Cach
-fileprivate protocol ImageCacheable {
+fileprivate protocol ImageCacheable: AnyObject {
     func search(origin: String) -> UIImage?
     func cacheImage(origin: String, image: UIImage)
 }
