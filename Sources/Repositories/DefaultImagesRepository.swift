@@ -16,17 +16,40 @@ public enum ImagesRepositoryError: String, Error {
     case deleteError = "이미지 삭제를 실패했습니다."
 }
 
+// MARK: - Private. Cach
+fileprivate protocol ImageCacheable {
+    func search(origin: String) -> UIImage?
+    func cacheImage(origin: String, image: UIImage)
+}
+
+fileprivate final class ImageCacheManager: ImageCacheable {
+    private var images = [String: UIImage]()
+    
+    func search(origin: String) -> UIImage? {
+        if let image = images[origin] {
+            return image
+        } else {
+            return nil
+        }
+    }
+    
+    func cacheImage(origin: String, image: UIImage) {
+        images[origin] = image
+    }
+}
+
+// MARK: - Repository
 /// Firebase Storage 서비스
-/// 이미지를 다운로드하고 캐시 도입
 public final class DefaultImagesRepository: ImagesRepository {
     // MARK: - Private
     private let storageReference: StorageReference
-    private var cachedImages = [String: UIImage]()
+    private let imageCacheManager: ImageCacheManager
     
     // MARK: - Init
     public init() {
         let storage = Storage.storage()
         self.storageReference = storage.reference()
+        self.imageCacheManager = ImageCacheManager()
     }
     
     // MARK: - Repository logic
@@ -36,7 +59,7 @@ public final class DefaultImagesRepository: ImagesRepository {
             do {
                 let _ = try await imageReference.putDataAsync(data)
                 // using metadata
-                cacheImage(index, image: image)
+                imageCacheManager.cacheImage(origin: String(index), image: image)
             } catch {
                 throw ImagesRepositoryError.uploadError
             }
@@ -48,7 +71,7 @@ public final class DefaultImagesRepository: ImagesRepository {
     ///   - index: Memories에서 Memory의 index이자, 이미지의 이름
     ///   - completion: UIImage publish
     public func read(at index: Int, _ completion: @escaping ((Result<UIImage, Error>) -> Void)) {
-        if let image = cachedImage(index) {
+        if let image = imageCacheManager.search(origin: String(index)) {
             completion(.success(image))
             return
         }
@@ -64,7 +87,8 @@ public final class DefaultImagesRepository: ImagesRepository {
                     completion(.failure(ImagesRepositoryError.readError))
                     return
                 }
-                self.cacheImage(index, image: image)
+                
+                self.imageCacheManager.cacheImage(origin: String(index), image: image)
                 completion(.success(image))
                 return
             } else {
@@ -81,21 +105,6 @@ public final class DefaultImagesRepository: ImagesRepository {
         } catch {
             throw ImagesRepositoryError.deleteError
         }
-    }
-}
-
-// MARK: - Private. Cach
-private extension DefaultImagesRepository {
-    func cachedImage(_ index: Int) -> UIImage? {
-        if let image = cachedImages["\(index)"] {
-            return image
-        } else {
-            return nil
-        }
-    }
-    
-    func cacheImage(_ index: Int, image: UIImage) {
-        cachedImages["\(index)"] = image
     }
 }
 
