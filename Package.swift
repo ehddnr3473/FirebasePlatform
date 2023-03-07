@@ -46,6 +46,11 @@ let package = Package(
                 )
             ],
             path: "./Sources"
+        ),
+        .testTarget(
+            name: "FirebasePlatformTests",
+            dependencies: ["FirebasePlatform"],
+            path: "./Tests"
         )
     ]
 )
