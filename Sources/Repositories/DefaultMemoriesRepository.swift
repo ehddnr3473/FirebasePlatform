@@ -54,9 +54,9 @@ public struct DefaultMemoriesRepository: MemoriesRepository {
         }
     }
     
-    public func delete(at index: Int) async throws {
+    public func delete(key: String) async throws {
         do {
-            try await database.collection(DatabasePath.memories).document("\(index)").delete()
+            try await database.collection(DatabasePath.memories).document(key).delete()
         } catch {
             throw MemoriesRepositoryError.deleteError
         }

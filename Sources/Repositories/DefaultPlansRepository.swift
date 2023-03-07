@@ -29,9 +29,9 @@ public struct DefaultPlansRepository: PlansRepository {
     }
     
     // MARK: - Repository logic
-    public func upload(at index: Int, plan: Plan) async throws {
+    public func upload(key: String, plan: Plan) async throws {
         do {
-            try await database.collection(DatabasePath.plans).document("\(index)").setData([
+            try await database.collection(DatabasePath.plans).document(key).setData([
                 Key.title: plan.title,
                 Key.description: plan.description
             ])
@@ -42,7 +42,7 @@ public struct DefaultPlansRepository: PlansRepository {
                     longitude: plan.schedules[scheduleIndex].coordinate.longitude
                 )
                 try await database.collection(DatabasePath.plans)
-                    .document("\(index)").collection(DocumentConstants.schedulesCollection).document("\(scheduleIndex)")
+                    .document(key).collection(DocumentConstants.schedulesCollection).document("\(scheduleIndex)")
                     .setData([
                         // Key-Value Pair
                         Key.title:
@@ -87,10 +87,12 @@ public struct DefaultPlansRepository: PlansRepository {
         }
     }
     
-    public func delete(at index: Int, plans: [Plan]) async throws {
+    public func delete(key: String, plans: [Plan]) async throws {
         do {
-            try await database.collection(DatabasePath.plans).document("\(index)").delete()
-            try await deleteCompletion(at: index, plans: plans)
+            try await database.collection(DatabasePath.plans).document(key).delete()
+            
+            guard let deletedKey = Int(key) else { return }
+            try await deleteCompletion(at: deletedKey, plans: plans)
         } catch {
             throw PlansRepositoryError.deleteError
         }
@@ -135,7 +137,7 @@ private extension DefaultPlansRepository {
         guard deletedIndex < plans.count - 1 else { return }
         
         for index in deletedIndex..<plans.count - 1 {
-            try await upload(at: index, plan: plans[index + 1])
+            try await upload(key: String(index), plan: plans[index + 1])
         }
         
         try await database.collection(DatabasePath.plans).document("\(plans.count - 1)").delete()

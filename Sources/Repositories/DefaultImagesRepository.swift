@@ -54,13 +54,13 @@ public final class DefaultImagesRepository: ImagesRepository {
     }
     
     // MARK: - Repository logic
-    public func upload(at index: Int, _ image: UIImage) async throws {
+    public func upload(key: String, _ image: UIImage) async throws {
         if let data = image.pngData() {
-            let imageReference = storageReference.child("\(DocumentConstants.memoriesPath)/\(index)")
+            let imageReference = storageReference.child("\(DocumentConstants.memoriesPath)/\(key)")
             do {
                 let _ = try await imageReference.putDataAsync(data)
                 // using metadata
-                imageCacheManager.cacheImage(origin: String(index), image: image)
+                imageCacheManager.cacheImage(origin: String(key), image: image)
             } catch {
                 throw ImagesRepositoryError.uploadError
             }
@@ -71,13 +71,13 @@ public final class DefaultImagesRepository: ImagesRepository {
     /// - Parameters:
     ///   - index: Memories에서 Memory의 index이자, 이미지의 이름
     ///   - completion: UIImage publish
-    public func read(at index: Int, _ completion: @escaping ((Result<UIImage, Error>) -> Void)) {
-        if let image = imageCacheManager.search(origin: String(index)) {
+    public func read(key: String, _ completion: @escaping ((Result<UIImage, Error>) -> Void)) {
+        if let image = imageCacheManager.search(origin: String(key)) {
             completion(.success(image))
             return
         }
         
-        let imageReference = storageReference.child("\(DocumentConstants.memoriesPath)/\(index)")
+        let imageReference = storageReference.child("\(DocumentConstants.memoriesPath)/\(key)")
         imageReference.getData(maxSize: .max) { data, error in
             if error != nil {
                 completion(.failure(ImagesRepositoryError.readError))
@@ -89,7 +89,7 @@ public final class DefaultImagesRepository: ImagesRepository {
                     return
                 }
                 
-                self.imageCacheManager.cacheImage(origin: String(index), image: image)
+                self.imageCacheManager.cacheImage(origin: key, image: image)
                 completion(.success(image))
                 return
             } else {
@@ -99,8 +99,8 @@ public final class DefaultImagesRepository: ImagesRepository {
         }
     }
     
-    public func delete(at index: Int) async throws {
-        let reference = storageReference.child("\(index)")
+    public func delete(key: String) async throws {
+        let reference = storageReference.child(key)
         do {
             try await reference.delete()
         } catch {
