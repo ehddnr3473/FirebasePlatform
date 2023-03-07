@@ -6,8 +6,8 @@
 //
 
 import Foundation
-import Domain
 import UIKit
+import Domain
 import FirebaseStorage
 
 public enum ImagesRepositoryError: String, Error {
@@ -16,13 +16,13 @@ public enum ImagesRepositoryError: String, Error {
     case deleteError = "이미지 삭제를 실패했습니다."
 }
 
-// MARK: - Private. Cach
-fileprivate protocol ImageCacheable: AnyObject {
+// MARK: - Internal. Cach
+protocol ImageCacheable: AnyObject {
     func search(origin: String) -> UIImage?
     func cacheImage(origin: String, image: UIImage)
 }
 
-fileprivate final class ImageCacheManager: ImageCacheable {
+final class ImageCacheManager: ImageCacheable {
     private var images = [String: UIImage]()
     
     func search(origin: String) -> UIImage? {
@@ -43,7 +43,8 @@ fileprivate final class ImageCacheManager: ImageCacheable {
 public final class DefaultImagesRepository: ImagesRepository {
     // MARK: - Private
     private let storageReference: StorageReference
-    private let imageCacheManager: ImageCacheManager
+    // MARK: - Internal
+    let imageCacheManager: ImageCacheable
     
     // MARK: - Init
     public init() {
