@@ -20,6 +20,7 @@ public enum PlansRepositoryError: String, Error {
 
 /// Firebase Firestore 서비스
 public struct DefaultPlansRepository: PlansRepository {
+    public typealias CompletionHandler = (Result<Bool, PlansRepositoryError>) -> Void
     // MARK: - Private
     private var database: Firestore
     
@@ -29,40 +30,7 @@ public struct DefaultPlansRepository: PlansRepository {
     }
     
     // MARK: - Repository logic
-//    public func upload(key: String, plan: Plan) async throws {
-//        do {
-//            try await database.collection(DatabasePath.plans).document(key).setData([
-//                Key.title: plan.title,
-//                Key.description: plan.description
-//            ])
-//
-//            for index in plan.schedules.indices {
-//                let coordinate = GeoPoint(
-//                    latitude: plan.schedules[index].coordinate.latitude,
-//                    longitude: plan.schedules[index].coordinate.longitude
-//                )
-//                try await database.collection(DatabasePath.plans)
-//                    .document(key).collection(DocumentConstants.schedulesCollection).document("\(index)")
-//                    .setData([
-//                        // Key-Value Pair
-//                        Key.title:
-//                            plan.schedules[index].title,
-//                        Key.description:
-//                            plan.schedules[index].description,
-//                        Key.fromDate:
-//                            DateConverter.dateToString(plan.schedules[index].fromDate),
-//                        Key.toDate:
-//                            DateConverter.dateToString(plan.schedules[index].toDate),
-//                        Key.coordinate:
-//                            coordinate
-//                    ])
-//            }
-//        } catch {
-//            throw PlansRepositoryError.uploadError
-//        }
-//    }
-    
-    public func upload(key: String, plan:Plan, completion: @escaping ((Result<Bool, PlansRepositoryError>) -> Void)) async throws {
+    public func upload(key: String, plan:Plan, completion: @escaping CompletionHandler) {
         database.runTransaction({ (transaction, errorPointer) in
             transaction.setData([
                 Key.title: plan.title,
@@ -123,22 +91,115 @@ public struct DefaultPlansRepository: PlansRepository {
         }
     }
     
-    public func delete(key: String) async throws {
-        do {
-            try await database.collection(DatabasePath.plans).document(key).delete()
-        } catch {
-            throw PlansRepositoryError.deleteError
+    public func delete(key: String, plans: [Plan], completion: @escaping CompletionHandler) {
+        database.runTransaction({ (transaction, errorPointer) in
+            transaction.deleteDocument(database.collection(DatabasePath.plans).document(key))
+            
+            guard let deletedKey = Int(key), deletedKey < plans.count - 1 else {
+                completion(.success(true))
+                return
+            }
+            
+            for index in deletedKey..<plans.count - 1 {
+                transaction.deleteDocument(database.collection(DatabasePath.plans).document(String(index)))
+                transaction.setData([
+                    Key.title: plans[index + 1].title,
+                    Key.title: plans[index + 1].description
+                ], forDocument: database.collection(DatabasePath.plans).document(String(index)))
+
+                for scheduleIndex in plans[index + 1].schedules.indices {
+                    let coordinate = GeoPoint(
+                        latitude: plans[index + 1].schedules[scheduleIndex].coordinate.latitude,
+                        longitude: plans[index + 1].schedules[scheduleIndex].coordinate.longitude
+                    )
+                    transaction.setData([
+                        Key.title:
+                            plans[index + 1].schedules[scheduleIndex].title,
+                        Key.description:
+                            plans[index + 1].schedules[scheduleIndex].description,
+                        Key.fromDate:
+                            DateConverter.dateToString(plans[index + 1].schedules[scheduleIndex].fromDate),
+                        Key.toDate:
+                            DateConverter.dateToString(plans[index + 1].schedules[scheduleIndex].toDate),
+                        Key.coordinate:
+                            coordinate
+                    ], forDocument: database.collection(DatabasePath.plans)
+                        .document(String(index)).collection(DocumentConstants.schedulesCollection).document("\(scheduleIndex)"))
+                }
+            }
+            
+            transaction.deleteDocument(database.collection(DatabasePath.plans).document("\(plans.count - 1)"))
+            
+            completion(.success(true))
+        }) { (_, error) in
+            if error != nil {
+                completion(.failure(PlansRepositoryError.deleteError))
+            }
         }
     }
     
-    public func deleteWithSort(key: String, plans: [Plan]) async throws {
-        do {
-            try await database.collection(DatabasePath.plans).document(key).delete()
+    public func swap(_ swapPlansBox: SwapPlansBox, completion: @escaping CompletionHandler) {
+        database.runTransaction({ (transaction, errorPointer) in
+            transaction.deleteDocument(database.collection(DatabasePath.plans).document(swapPlansBox.sourceKey))
+            transaction.deleteDocument(database.collection(DatabasePath.plans).document(swapPlansBox.destinationKey))
             
-            guard let deletedKey = Int(key) else { return }
-            try await sort(from: deletedKey, plans: plans)
-        } catch {
-            throw PlansRepositoryError.deleteError
+            // Source
+            transaction.setData([
+                Key.title: swapPlansBox.destinationPlan.title,
+                Key.description: swapPlansBox.destinationPlan.description
+            ], forDocument: database.collection(DatabasePath.plans).document(swapPlansBox.sourceKey))
+            
+            for index in swapPlansBox.destinationPlan.schedules.indices {
+                let coordinate = GeoPoint(
+                    latitude: swapPlansBox.destinationPlan.schedules[index].coordinate.latitude,
+                    longitude: swapPlansBox.destinationPlan.schedules[index].coordinate.longitude
+                )
+                transaction.setData([
+                    Key.title:
+                        swapPlansBox.destinationPlan.schedules[index].title,
+                    Key.description:
+                        swapPlansBox.destinationPlan.schedules[index].description,
+                    Key.fromDate:
+                        DateConverter.dateToString(swapPlansBox.destinationPlan.schedules[index].fromDate),
+                    Key.toDate:
+                        DateConverter.dateToString(swapPlansBox.destinationPlan.schedules[index].toDate),
+                    Key.coordinate:
+                        coordinate
+                ], forDocument: database.collection(DatabasePath.plans)
+                    .document(swapPlansBox.sourceKey).collection(DocumentConstants.schedulesCollection).document("\(index)"))
+            }
+            
+            // Destination
+            transaction.setData([
+                Key.title: swapPlansBox.sourcePlan.title,
+                Key.description: swapPlansBox.sourcePlan.description
+            ], forDocument: database.collection(DatabasePath.plans).document(swapPlansBox.destinationKey))
+            
+            for index in swapPlansBox.sourcePlan.schedules.indices {
+                let coordinate = GeoPoint(
+                    latitude: swapPlansBox.sourcePlan.schedules[index].coordinate.latitude,
+                    longitude: swapPlansBox.sourcePlan.schedules[index].coordinate.longitude
+                )
+                transaction.setData([
+                    Key.title:
+                        swapPlansBox.sourcePlan.schedules[index].title,
+                    Key.description:
+                        swapPlansBox.sourcePlan.schedules[index].description,
+                    Key.fromDate:
+                        DateConverter.dateToString(swapPlansBox.sourcePlan.schedules[index].fromDate),
+                    Key.toDate:
+                        DateConverter.dateToString(swapPlansBox.sourcePlan.schedules[index].toDate),
+                    Key.coordinate:
+                        coordinate
+                ], forDocument: database.collection(DatabasePath.plans)
+                    .document(swapPlansBox.destinationKey).collection(DocumentConstants.schedulesCollection).document("\(index)"))
+            }
+            
+            completion(.success(true))
+        }) { (_, error) in
+            if error != nil {
+                completion(.failure(PlansRepositoryError.swapError))
+            }
         }
     }
 }
@@ -175,16 +236,6 @@ private extension DefaultPlansRepository {
                 toDate: nil
             )
         }
-    }
-    
-    func sort(from deletedIndex: Int, plans: [Plan]) async throws {
-        guard deletedIndex < plans.count - 1 else { return }
-        
-        for index in deletedIndex..<plans.count - 1 {
-            try await upload(key: String(index), plan: plans[index + 1])
-        }
-        
-        try await database.collection(DatabasePath.plans).document("\(plans.count - 1)").delete()
     }
 }
 
