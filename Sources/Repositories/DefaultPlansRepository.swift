@@ -29,37 +29,73 @@ public struct DefaultPlansRepository: PlansRepository {
     }
     
     // MARK: - Repository logic
-    public func upload(key: String, plan: Plan) async throws {
-        do {
-            try await database.collection(DatabasePath.plans).document(key).setData([
+//    public func upload(key: String, plan: Plan) async throws {
+//        do {
+//            try await database.collection(DatabasePath.plans).document(key).setData([
+//                Key.title: plan.title,
+//                Key.description: plan.description
+//            ])
+//
+//            for index in plan.schedules.indices {
+//                let coordinate = GeoPoint(
+//                    latitude: plan.schedules[index].coordinate.latitude,
+//                    longitude: plan.schedules[index].coordinate.longitude
+//                )
+//                try await database.collection(DatabasePath.plans)
+//                    .document(key).collection(DocumentConstants.schedulesCollection).document("\(index)")
+//                    .setData([
+//                        // Key-Value Pair
+//                        Key.title:
+//                            plan.schedules[index].title,
+//                        Key.description:
+//                            plan.schedules[index].description,
+//                        Key.fromDate:
+//                            DateConverter.dateToString(plan.schedules[index].fromDate),
+//                        Key.toDate:
+//                            DateConverter.dateToString(plan.schedules[index].toDate),
+//                        Key.coordinate:
+//                            coordinate
+//                    ])
+//            }
+//        } catch {
+//            throw PlansRepositoryError.uploadError
+//        }
+//    }
+    
+    public func upload(key: String, plan:Plan, completion: @escaping ((Result<Bool, PlansRepositoryError>) -> Void)) async throws {
+        database.runTransaction({ (transaction, errorPointer) in
+            transaction.setData([
                 Key.title: plan.title,
                 Key.description: plan.description
-            ])
+            ], forDocument: database.collection(DatabasePath.plans).document(key))
             
-            for scheduleIndex in plan.schedules.indices {
+            for index in plan.schedules.indices {
                 let coordinate = GeoPoint(
-                    latitude: plan.schedules[scheduleIndex].coordinate.latitude,
-                    longitude: plan.schedules[scheduleIndex].coordinate.longitude
+                    latitude: plan.schedules[index].coordinate.latitude,
+                    longitude: plan.schedules[index].coordinate.longitude
                 )
-                try await database.collection(DatabasePath.plans)
-                    .document(key).collection(DocumentConstants.schedulesCollection).document("\(scheduleIndex)")
-                    .setData([
-                        // Key-Value Pair
-                        Key.title:
-                            plan.schedules[scheduleIndex].title,
-                        Key.description:
-                            plan.schedules[scheduleIndex].description,
-                        Key.fromDate:
-                            DateConverter.dateToString(plan.schedules[scheduleIndex].fromDate),
-                        Key.toDate:
-                            DateConverter.dateToString(plan.schedules[scheduleIndex].toDate),
-                        Key.coordinate:
-                            coordinate
-                    ])
+                transaction.setData([
+                    // Key-Value Pair
+                    Key.title:
+                        plan.schedules[index].title,
+                    Key.description:
+                        plan.schedules[index].description,
+                    Key.fromDate:
+                        DateConverter.dateToString(plan.schedules[index].fromDate),
+                    Key.toDate:
+                        DateConverter.dateToString(plan.schedules[index].toDate),
+                    Key.coordinate:
+                        coordinate
+                ], forDocument: database.collection(DatabasePath.plans)
+                    .document(key).collection(DocumentConstants.schedulesCollection).document("\(index)"))
             }
-        } catch {
-            throw PlansRepositoryError.uploadError
-        }
+            
+            completion(.success(true))
+        }, completion: { (_, error) in
+            if error != nil {
+                completion(.failure(PlansRepositoryError.uploadError))
+            }
+        })
     }
     
     public func read() async throws -> [Plan] {
@@ -87,12 +123,20 @@ public struct DefaultPlansRepository: PlansRepository {
         }
     }
     
-    public func delete(key: String, plans: [Plan]) async throws {
+    public func delete(key: String) async throws {
+        do {
+            try await database.collection(DatabasePath.plans).document(key).delete()
+        } catch {
+            throw PlansRepositoryError.deleteError
+        }
+    }
+    
+    public func deleteWithSort(key: String, plans: [Plan]) async throws {
         do {
             try await database.collection(DatabasePath.plans).document(key).delete()
             
             guard let deletedKey = Int(key) else { return }
-            try await deleteCompletion(at: deletedKey, plans: plans)
+            try await sort(from: deletedKey, plans: plans)
         } catch {
             throw PlansRepositoryError.deleteError
         }
@@ -133,7 +177,7 @@ private extension DefaultPlansRepository {
         }
     }
     
-    func deleteCompletion(at deletedIndex: Int, plans: [Plan]) async throws {
+    func sort(from deletedIndex: Int, plans: [Plan]) async throws {
         guard deletedIndex < plans.count - 1 else { return }
         
         for index in deletedIndex..<plans.count - 1 {
