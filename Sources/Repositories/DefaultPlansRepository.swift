@@ -91,50 +91,48 @@ public struct DefaultPlansRepository: PlansRepository {
         }
     }
     
-    public func delete(key: String, plans: [Plan], completion: @escaping CompletionHandler) {
-        database.runTransaction({ (transaction, errorPointer) in
-            transaction.deleteDocument(database.collection(DatabasePath.plans).document(key))
+    public func delete(key: String, plans: [Plan]) async throws {
+        let batch = database.batch()
+        let plansCollectionReference = database.collection(DatabasePath.plans)
+        batch.deleteDocument(plansCollectionReference.document(key))
+        
+        // sort or return
+        guard let deleteKey = Int(key), deleteKey < plans.count - 1 else { return }
+        
+        for index in deleteKey..<plans.count - 1 {
+            // 하위 컬렉션 덮어쓰기 문제 때문에 삭제 수행
+            batch.deleteDocument(plansCollectionReference.document(String(index)))
             
-            guard let deletedKey = Int(key), deletedKey < plans.count - 1 else {
-                completion(.success(true))
-                return
+            batch.setData([
+                Key.title: plans[index + 1].title,
+                Key.title: plans[index + 1].description
+            ], forDocument: plansCollectionReference.document(String(index)))
+            
+            for scheduleIndex in plans[index + 1].schedules.indices {
+                let coordinate = GeoPoint(
+                    latitude: plans[index + 1].schedules[scheduleIndex].coordinate.latitude,
+                    longitude: plans[index + 1].schedules[scheduleIndex].coordinate.longitude
+                )
+                batch.setData([
+                    Key.title:
+                        plans[index + 1].schedules[scheduleIndex].title,
+                    Key.description:
+                        plans[index + 1].schedules[scheduleIndex].description,
+                    Key.fromDate:
+                        DateConverter.dateToString(plans[index + 1].schedules[scheduleIndex].fromDate),
+                    Key.toDate:
+                        DateConverter.dateToString(plans[index + 1].schedules[scheduleIndex].toDate),
+                    Key.coordinate:
+                        coordinate
+                ], forDocument: plansCollectionReference
+                    .document(String(index)).collection(DocumentConstants.schedulesCollection).document("\(scheduleIndex)"))
             }
-            
-            for index in deletedKey..<plans.count - 1 {
-                transaction.deleteDocument(database.collection(DatabasePath.plans).document(String(index)))
-                transaction.setData([
-                    Key.title: plans[index + 1].title,
-                    Key.title: plans[index + 1].description
-                ], forDocument: database.collection(DatabasePath.plans).document(String(index)))
-
-                for scheduleIndex in plans[index + 1].schedules.indices {
-                    let coordinate = GeoPoint(
-                        latitude: plans[index + 1].schedules[scheduleIndex].coordinate.latitude,
-                        longitude: plans[index + 1].schedules[scheduleIndex].coordinate.longitude
-                    )
-                    transaction.setData([
-                        Key.title:
-                            plans[index + 1].schedules[scheduleIndex].title,
-                        Key.description:
-                            plans[index + 1].schedules[scheduleIndex].description,
-                        Key.fromDate:
-                            DateConverter.dateToString(plans[index + 1].schedules[scheduleIndex].fromDate),
-                        Key.toDate:
-                            DateConverter.dateToString(plans[index + 1].schedules[scheduleIndex].toDate),
-                        Key.coordinate:
-                            coordinate
-                    ], forDocument: database.collection(DatabasePath.plans)
-                        .document(String(index)).collection(DocumentConstants.schedulesCollection).document("\(scheduleIndex)"))
-                }
-            }
-            
-            transaction.deleteDocument(database.collection(DatabasePath.plans).document("\(plans.count - 1)"))
-            
-            completion(.success(true))
-        }) { (_, error) in
-            if error != nil {
-                completion(.failure(PlansRepositoryError.deleteError))
-            }
+        }
+        
+        do {
+            try await batch.commit()
+        } catch {
+            throw PlansRepositoryError.deleteError
         }
     }
     
