@@ -12,11 +12,13 @@ struct PlanDTO: Codable {
     let title: String
     let description: String
     let schedules: [ScheduleDTO]
+    let updatedDate: Date
     
     init(plan: Plan) {
         self.title = plan.title
         self.description = plan.description
         self.schedules = plan.schedules.map { .init(schedule: $0) }
+        self.updatedDate = Date()
     }
 }
 
