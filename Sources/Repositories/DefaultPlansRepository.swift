@@ -53,7 +53,7 @@ public struct DefaultPlansRepository: PlansRepository {
                 planDTOs.append(planDTO)
             }
             
-            return planDTOs.map { $0.toDomain() }
+            return planDTOs.sorted(by: { $0.updatedDate > $1.updatedDate }).map { $0.toDomain() }
         } catch {
             throw PlansRepositoryError.readError
         }
