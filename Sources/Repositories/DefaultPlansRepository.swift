@@ -10,6 +10,7 @@ import Domain
 import CoreLocation
 import FirebaseCore
 import FirebaseFirestore
+import FirebaseFirestoreSwift
 
 public enum PlansRepositoryError: String, Error {
     case uploadError = "계획 업로드를 실패했습니다."
@@ -20,7 +21,6 @@ public enum PlansRepositoryError: String, Error {
 
 /// Firebase Firestore 서비스
 public struct DefaultPlansRepository: PlansRepository {
-    public typealias CompletionHandler = (Result<Bool, PlansRepositoryError>) -> Void
     // MARK: - Private
     private var database: Firestore
     
@@ -30,209 +30,40 @@ public struct DefaultPlansRepository: PlansRepository {
     }
     
     // MARK: - Repository logic
-    public func upload(key: String, plan:Plan, completion: @escaping CompletionHandler) {
-        database.runTransaction({ (transaction, errorPointer) in
-            transaction.setData([
-                Key.title: plan.title,
-                Key.description: plan.description
-            ], forDocument: database.collection(DatabasePath.plans).document(key))
-            
-            for index in plan.schedules.indices {
-                let coordinate = GeoPoint(
-                    latitude: plan.schedules[index].coordinate.latitude,
-                    longitude: plan.schedules[index].coordinate.longitude
-                )
-                transaction.setData([
-                    // Key-Value Pair
-                    Key.title:
-                        plan.schedules[index].title,
-                    Key.description:
-                        plan.schedules[index].description,
-                    Key.fromDate:
-                        DateConverter.dateToString(plan.schedules[index].fromDate),
-                    Key.toDate:
-                        DateConverter.dateToString(plan.schedules[index].toDate),
-                    Key.coordinate:
-                        coordinate
-                ], forDocument: database.collection(DatabasePath.plans)
-                    .document(key).collection(DocumentConstants.schedulesCollection).document("\(index)"))
-            }
-            
-            completion(.success(true))
-        }, completion: { (_, error) in
-            if error != nil {
-                completion(.failure(PlansRepositoryError.uploadError))
-            }
-        })
+    public func upload(plan: Plan) throws {
+        let planDTO = PlanDTO(plan: plan)
+        
+        do {
+            try database.collection(DatabasePath.plans).document(planDTO.title).setData(from: planDTO)
+        } catch {
+            throw PlansRepositoryError.uploadError
+        }
     }
     
     public func read() async throws -> [Plan] {
-        var plans = [Plan]()
+        var planDTOs = [PlanDTO]()
         
         do {
-            let plansSnapshot = try await database.collection(DatabasePath.plans).getDocuments()
-            var documentIndex = NumberConstants.zero
+            let querySnapshot = try await database.collection(DatabasePath.plans).getDocuments()
             
-            for document in plansSnapshot.documents {
-                let data = document.data()
-                let scheduleSnapshot = try await database.collection(DatabasePath.plans)
-                    .document("\(documentIndex)").collection(DocumentConstants.schedulesCollection).getDocuments()
-                var schedules = [Schedule]()
-                
-                for documentation in scheduleSnapshot.documents {
-                    schedules.append(createSchedule(documentation.data()))
-                }
-                plans.append(createPlan(data, schedules))
-                documentIndex += NumberConstants.one
+            for document in querySnapshot.documents {
+                let id = document.documentID
+                let reference = database.collection(DatabasePath.plans).document(id)
+                let planDTO = try await reference.getDocument(as: PlanDTO.self)
+                planDTOs.append(planDTO)
             }
-            return plans
+            
+            return planDTOs.map { $0.toDomain() }.sorted(by: { $0.updatedDate > $1.updatedDate })
         } catch {
             throw PlansRepositoryError.readError
         }
     }
     
-    public func delete(key: String, plans: [Plan]) async throws {
-        let batch = database.batch()
-        let plansCollectionReference = database.collection(DatabasePath.plans)
-        batch.deleteDocument(plansCollectionReference.document(key))
-        
-        // sort or return
-        guard let deleteKey = Int(key), deleteKey < plans.count - 1 else { return }
-        
-        for index in deleteKey..<plans.count - 1 {
-            // 하위 컬렉션 덮어쓰기 문제 때문에 삭제 수행
-            batch.deleteDocument(plansCollectionReference.document(String(index)))
-            
-            batch.setData([
-                Key.title: plans[index + 1].title,
-                Key.title: plans[index + 1].description
-            ], forDocument: plansCollectionReference.document(String(index)))
-            
-            for scheduleIndex in plans[index + 1].schedules.indices {
-                let coordinate = GeoPoint(
-                    latitude: plans[index + 1].schedules[scheduleIndex].coordinate.latitude,
-                    longitude: plans[index + 1].schedules[scheduleIndex].coordinate.longitude
-                )
-                batch.setData([
-                    Key.title:
-                        plans[index + 1].schedules[scheduleIndex].title,
-                    Key.description:
-                        plans[index + 1].schedules[scheduleIndex].description,
-                    Key.fromDate:
-                        DateConverter.dateToString(plans[index + 1].schedules[scheduleIndex].fromDate),
-                    Key.toDate:
-                        DateConverter.dateToString(plans[index + 1].schedules[scheduleIndex].toDate),
-                    Key.coordinate:
-                        coordinate
-                ], forDocument: plansCollectionReference
-                    .document(String(index)).collection(DocumentConstants.schedulesCollection).document("\(scheduleIndex)"))
-            }
-        }
-        
+    public func delete(key: String) async throws {
         do {
-            try await batch.commit()
+            try await database.collection(DatabasePath.plans).document(key).delete()
         } catch {
             throw PlansRepositoryError.deleteError
-        }
-    }
-    
-    public func swap(_ swapPlansBox: SwapPlansBox, completion: @escaping CompletionHandler) {
-        database.runTransaction({ (transaction, errorPointer) in
-            transaction.deleteDocument(database.collection(DatabasePath.plans).document(swapPlansBox.sourceKey))
-            transaction.deleteDocument(database.collection(DatabasePath.plans).document(swapPlansBox.destinationKey))
-            
-            // Source
-            transaction.setData([
-                Key.title: swapPlansBox.destinationPlan.title,
-                Key.description: swapPlansBox.destinationPlan.description
-            ], forDocument: database.collection(DatabasePath.plans).document(swapPlansBox.sourceKey))
-            
-            for index in swapPlansBox.destinationPlan.schedules.indices {
-                let coordinate = GeoPoint(
-                    latitude: swapPlansBox.destinationPlan.schedules[index].coordinate.latitude,
-                    longitude: swapPlansBox.destinationPlan.schedules[index].coordinate.longitude
-                )
-                transaction.setData([
-                    Key.title:
-                        swapPlansBox.destinationPlan.schedules[index].title,
-                    Key.description:
-                        swapPlansBox.destinationPlan.schedules[index].description,
-                    Key.fromDate:
-                        DateConverter.dateToString(swapPlansBox.destinationPlan.schedules[index].fromDate),
-                    Key.toDate:
-                        DateConverter.dateToString(swapPlansBox.destinationPlan.schedules[index].toDate),
-                    Key.coordinate:
-                        coordinate
-                ], forDocument: database.collection(DatabasePath.plans)
-                    .document(swapPlansBox.sourceKey).collection(DocumentConstants.schedulesCollection).document("\(index)"))
-            }
-            
-            // Destination
-            transaction.setData([
-                Key.title: swapPlansBox.sourcePlan.title,
-                Key.description: swapPlansBox.sourcePlan.description
-            ], forDocument: database.collection(DatabasePath.plans).document(swapPlansBox.destinationKey))
-            
-            for index in swapPlansBox.sourcePlan.schedules.indices {
-                let coordinate = GeoPoint(
-                    latitude: swapPlansBox.sourcePlan.schedules[index].coordinate.latitude,
-                    longitude: swapPlansBox.sourcePlan.schedules[index].coordinate.longitude
-                )
-                transaction.setData([
-                    Key.title:
-                        swapPlansBox.sourcePlan.schedules[index].title,
-                    Key.description:
-                        swapPlansBox.sourcePlan.schedules[index].description,
-                    Key.fromDate:
-                        DateConverter.dateToString(swapPlansBox.sourcePlan.schedules[index].fromDate),
-                    Key.toDate:
-                        DateConverter.dateToString(swapPlansBox.sourcePlan.schedules[index].toDate),
-                    Key.coordinate:
-                        coordinate
-                ], forDocument: database.collection(DatabasePath.plans)
-                    .document(swapPlansBox.destinationKey).collection(DocumentConstants.schedulesCollection).document("\(index)"))
-            }
-            
-            completion(.success(true))
-        }) { (_, error) in
-            if error != nil {
-                completion(.failure(PlansRepositoryError.swapError))
-            }
-        }
-    }
-}
-
-// MARK: - Private
-private extension DefaultPlansRepository {
-    // Firebase에서 다운로드한 데이터로 Plan을 생성해서 반환
-    func createPlan(_ data: Dictionary<String, Any>, _ schedules: [Schedule]) -> Plan {
-        Plan(
-            title: data[Key.title] as! String,
-            description: data[Key.description] as! String,
-            schedules: schedules
-        )
-    }
-    
-    // Firebase에서 다운로드한 데이터로 Schedule을 생성해서 반환
-    func createSchedule(_ data: Dictionary<String, Any>) -> Schedule {
-        guard let coordinate = data[Key.coordinate] as? GeoPoint else { fatalError() }
-        if let fromDate = data[Key.fromDate] as? String,
-           let toDate = data[Key.toDate] as? String {
-            return Schedule(
-                title: data[Key.title] as! String,
-                description: data[Key.description] as! String,
-                coordinate: CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude),
-                fromDate: DateConverter.stringToDate(fromDate),
-                toDate: DateConverter.stringToDate(toDate)
-            )
-        } else {
-            return Schedule(
-                title: data[Key.title] as! String,
-                description: data[Key.description] as! String,
-                coordinate: CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude),
-                fromDate: nil,
-                toDate: nil
-            )
         }
     }
 }
