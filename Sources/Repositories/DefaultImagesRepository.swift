@@ -16,7 +16,7 @@ public enum ImagesRepositoryError: String, Error {
     case deleteError = "이미지 삭제를 실패했습니다."
 }
 
-// MARK: - Internal. Cach
+// MARK: - Internal. Cache
 protocol ImageCacheable: AnyObject {
     func search(origin: String) -> UIImage?
     func cacheImage(origin: String, image: UIImage)
